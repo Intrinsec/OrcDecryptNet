@@ -7,6 +7,13 @@
     <Nullable>enable</Nullable>
     <Platforms>AnyCPU;x64</Platforms>
     <StartupObject>Program</StartupObject>
+    <Version>2.1.0</Version>
+    <PackageId>OrcDecryptNet</PackageId>
+    <Authors>jnu</Authors>
+    <Description>.NET CLI to decrypt DFIR-ORC .p7b archives.</Description>
+    <PackageProjectUrl>https://github.com/USER/OrcDecryptNet</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/USER/OrcDecryptNet</RepositoryUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
     <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
   </PropertyGroup>
 
@@ -14,6 +21,10 @@
     <PackageReference Include="Microsoft.Extensions.Logging" Version="8.0.0" />
     <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="8.0.0" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="9.0.9" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\README.md" Pack="true" PackagePath="\" Link="README.md" />
   </ItemGroup>
 
 </Project>

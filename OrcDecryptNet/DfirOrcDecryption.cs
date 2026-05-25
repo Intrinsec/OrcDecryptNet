@@ -26,13 +26,13 @@ namespace OrcDecryptNet
             }
 
             // Read the private key from file
-            RSA privateKey = CommonCrypto.LoadPrivateKeyFromPfx(privateKeyPath, password);
+            using RSA privateKey = CommonCrypto.LoadPrivateKeyFromPfx(privateKeyPath, password);
             if (privateKey == null)
             {
                 this._logger.LogDebug("Invalid private key.");
                 return false;
             }
-            return ProcessArchive(p7bPath, privateKey, outputFolder); ;
+            return ProcessArchive(p7bPath, privateKey, outputFolder);
         }
 
         public static int FindOffset(ReadOnlySpan<byte> data, ReadOnlySpan<byte> pattern)
@@ -174,15 +174,46 @@ namespace OrcDecryptNet
                 }
             }
 
-            int pkcs7Offset = FindOffset(s, pkcs7DataOid) + pkcs7DataOid.Length + 2;
+            int pkcs7DataOffset = FindOffset(s, pkcs7DataOid);
+            if (pkcs7DataOffset < 0)
+            {
+                this._logger.LogDebug("PKCS#7 data OID not found in file header.");
+                return false;
+            }
+
+            int pkcs7Offset = pkcs7DataOffset + pkcs7DataOid.Length + 2;
+            if (pkcs7Offset + 1 >= s.Length)
+            {
+                this._logger.LogDebug("PKCS#7 header is truncated before symmetric OID.");
+                return false;
+            }
+
             int oidLen = s[pkcs7Offset + 1];
+            if (pkcs7Offset + oidLen + 1 >= s.Length)
+            {
+                this._logger.LogDebug("Symmetric OID extends past the PKCS#7 header buffer.");
+                return false;
+            }
+
             byte[] oidBytes = new byte[oidLen + 2];
             Array.Copy(s, pkcs7Offset, oidBytes, 0, oidLen + 2);
 
             string symEncOid = CommonCrypto.DecodeOid(oidBytes);
 
             int ivOffset = pkcs7Offset + oidLen + 2;
+            if (ivOffset + 1 >= s.Length)
+            {
+                this._logger.LogDebug("PKCS#7 header is truncated before IV.");
+                return false;
+            }
+
             int ivLen = s[ivOffset + 1];
+            if (ivOffset + ivLen + 1 >= s.Length)
+            {
+                this._logger.LogDebug("IV extends past the PKCS#7 header buffer.");
+                return false;
+            }
+
             byte[] iv = new byte[ivLen];
             Array.Copy(s, ivOffset + 2, iv, 0, ivLen);
 
@@ -202,8 +233,17 @@ namespace OrcDecryptNet
                 foreach (int match in matchRsaOaep)
                 {
                     int keyOffset = match + rsaOaepOid.Length + 4;
+                    if (keyOffset + 1 >= s.Length)
+                    {
+                        continue;
+                    }
 
                     ushort encSymKeyLen = (ushort)((s[keyOffset] << 8) | s[keyOffset + 1]);
+                    if (keyOffset + 2 + encSymKeyLen > s.Length)
+                    {
+                        continue;
+                    }
+
                     byte[] encSymKey = new byte[encSymKeyLen];
                     Array.Copy(s, keyOffset + 2, encSymKey, 0, encSymKeyLen);
 
@@ -228,7 +268,17 @@ namespace OrcDecryptNet
                 foreach (int match in matchRsaEncryption)
                 {
                     int keyOffset = match + rsaEncryptionOid.Length + 2;
+                    if (keyOffset + 1 >= s.Length)
+                    {
+                        continue;
+                    }
+
                     ushort encSymKeyLen = (ushort)((s[keyOffset] << 8) | s[keyOffset + 1]);
+                    if (keyOffset + 2 + encSymKeyLen > s.Length)
+                    {
+                        continue;
+                    }
+
                     byte[] encSymKey = new byte[encSymKeyLen];
                     Array.Copy(s, keyOffset + 2, encSymKey, 0, encSymKeyLen);
 
@@ -258,7 +308,9 @@ namespace OrcDecryptNet
 
             if (contentOffset + 1 < s.Length && (s[contentOffset] != 0xA0 || s[contentOffset + 1] != 0x80))
             {
-                string hexSnippet = BitConverter.ToString(s, Math.Max(contentOffset - 10, 0), 30).Replace("-", "");
+                int snippetOffset = Math.Max(contentOffset - 10, 0);
+                int snippetLength = Math.Min(30, s.Length - snippetOffset);
+                string hexSnippet = BitConverter.ToString(s, snippetOffset, snippetLength).Replace("-", "");
                 int foundIndex = Array.IndexOf(s, 0xA0, 813);
 
                 this._logger.LogDebug($"File does not match what we expected (\\xA0\\x80) at offset {contentOffset}: {hexSnippet}. Found at {foundIndex}");
@@ -334,9 +386,7 @@ namespace OrcDecryptNet
                     {
                         firstBlockDecrypted = true;
                         isJRNL = decryptedData.Take(4).SequenceEqual(DfirOrcUnstream.MAGIC_JRNL);
-                        this._logger.LogDebug("Decrypted file is JRNL stream");
-                        if (!isJRNL)
-                            this._logger.LogDebug("Decrypted file is not JRNL stream");
+                        this._logger.LogDebug(isJRNL ? "Decrypted file is JRNL stream" : "Decrypted file is not JRNL stream");
                     }
 
                     if (isJRNL && p7bFileSize < Int32.MaxValue)
@@ -374,18 +424,10 @@ namespace OrcDecryptNet
                 this._logger.LogDebug("File is bigger than " + Int32.MaxValue + " bytes.");
                 this._logger.LogDebug("Running Unstream from temp file:" + fOutTempPath);
             }
-            fIn.Close();
-            mmfIn.Dispose();
-            memDecrypted.Close();
-            fOutTemp.Close();
-            mmfOutTemp.Dispose();
-            fOut.Close();
-            mmfOut.Dispose();
             if (File.Exists(fOutTempPath))
             { 
                 File.Delete(fOutTempPath);
             }
-            fOut.Close();
             this._logger.LogDebug("Successfully decrypted: {OutputPath}", outputPath);
             return true;
         }

@@ -1,5 +1,4 @@
 using System.Security.Cryptography;
-using System.Security.Cryptography.Pkcs;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
@@ -69,6 +68,12 @@ namespace OrcDecryptNet
 
                 var json = File.ReadAllText(_credentialsPath);
                 var credentials = JsonSerializer.Deserialize<StoredCredentials>(json);
+                if (credentials.Equals(default(StoredCredentials))
+                    || string.IsNullOrWhiteSpace(credentials.PrivateKeyPath)
+                    || string.IsNullOrWhiteSpace(credentials.EncryptedPassword))
+                {
+                    throw new InvalidDataException("Stored credentials are invalid or incomplete");
+                }
 
                 var encryptedPassword = Convert.FromBase64String(credentials.EncryptedPassword);
                 var decryptedPassword = ProtectedData.Unprotect(

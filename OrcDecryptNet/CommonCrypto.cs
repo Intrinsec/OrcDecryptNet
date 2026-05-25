@@ -7,7 +7,7 @@ namespace OrcDecryptNet
     {
         public static RSA LoadPrivateKeyFromPfx(string privateKeyPath, string password)
         {
-            var cert = new X509Certificate2(privateKeyPath, password, X509KeyStorageFlags.Exportable);
+            using var cert = new X509Certificate2(privateKeyPath, password, X509KeyStorageFlags.Exportable);
             var rsa = cert.GetRSAPrivateKey();
             if (rsa == null)
             {
